@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="it" data-mode="web">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estrattore P7M</title>
+<meta name="description" content="Estrai il documento originale dai file firmati digitalmente .p7m (fatture elettroniche, PDF firmati). Tutto avviene nel browser: i file non vengono caricati su alcun server.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232f6fde' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 3v5h5'/%3E%3Cpath d='m9 14 2 2 4-4'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --text: #1b1f24;
+    --muted: #5f6b7a;
+    --border: #dde1e7;
+    --accent: #2f6fde;
+    --accent-text: #ffffff;
+    --accent-soft: #e7effd;
+    --ok: #1f8a4c;
+    --error: #c23934;
+    --error-soft: #fdecec;
+    --radius: 10px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b;
+      --surface: #1c2026;
+      --surface-2: #242a31;
+      --text: #e8eaed;
+      --muted: #9aa4b1;
+      --border: #2f363f;
+      --accent: #5b8ff0;
+      --accent-text: #0d1117;
+      --accent-soft: #1d2a40;
+      --ok: #4cc27f;
+      --error: #f07470;
+      --error-soft: #3a1f21;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 28px 20px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  header p { margin: 2px 0 0; color: var(--muted); }
+
+  button, .btn {
+    font: inherit; font-size: 14px; font-weight: 500;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 8px; padding: 7px 14px; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  button:hover, .btn:hover { background: var(--surface-2); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.primary:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .5; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #drop {
+    border: 2px dashed var(--border); border-radius: 14px; background: var(--surface);
+    padding: 40px 20px; text-align: center; transition: border-color .15s, background .15s;
+  }
+  #drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  #drop svg { color: var(--accent); }
+  #drop h2 { font-size: 18px; margin: 10px 0 4px; }
+  #drop p { margin: 0 0 16px; color: var(--muted); }
+
+  #toolbar {
+    display: none; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin: 24px 0 10px;
+  }
+  #toolbar.visible { display: flex; }
+  #summary { color: var(--muted); }
+  #toolbar .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  #list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .item.error { border-color: var(--error); background: var(--error-soft); }
+  .row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+  .badge {
+    flex: none; width: 46px; height: 46px; border-radius: 8px;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .item.error .badge { background: transparent; color: var(--error); border: 1px solid var(--error); }
+  .info { flex: 1; min-width: 0; }
+  .name { font-weight: 600; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+  .item.error .meta { color: var(--error); }
+  .buttons { display: flex; gap: 6px; flex: none; }
+  .spinner {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  details { border-top: 1px solid var(--border); }
+  summary { cursor: pointer; padding: 8px 14px; color: var(--muted); font-size: 13.5px; }
+  .layer { padding: 0 14px 12px; }
+  .layer h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 6px 0; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 16px; margin: 0 0 10px; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+
+  footer { margin-top: 28px; color: var(--muted); font-size: 13px; text-align: center; }
+  #banner {
+    display: none; margin-bottom: 16px; padding: 12px 14px; border-radius: var(--radius);
+    background: var(--error-soft); color: var(--error); border: 1px solid var(--error);
+  }
+  #banner.visible { display: block; }
+  .closed { text-align: center; padding: 120px 20px; }
+  #status { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+  #status:empty { display: none; }
+  [data-mode="web"] .only-local, [data-mode="local"] .only-web { display: none !important; }
+
+  @media (max-width: 600px) {
+    .row { flex-wrap: wrap; }
+    .buttons { width: 100%; justify-content: flex-end; }
+    header { align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<main id="app">
+  <header>
+    <div>
+      <h1>Estrattore P7M</h1>
+      <p>Estrai il documento originale dai file firmati digitalmente</p>
+    </div>
+    <button id="quit" class="only-local" type="button" title="Chiudi il programma">Esci</button>
+  </header>
+
+  <div id="banner" role="alert"></div>
+
+  <section id="drop" aria-label="Area di caricamento">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 17v-6"/><path d="m9 14 3 3 3-3"/>
+    </svg>
+    <h2>Trascina qui i file .p7m o una cartella</h2>
+    <p>Fatture elettroniche, PDF firmati, documenti con più firme</p>
+    <button id="pick" class="primary" type="button">Scegli i file</button>
+    <input id="input" type="file" multiple hidden>
+    <p id="status" aria-live="polite"></p>
+  </section>
+
+  <div id="toolbar">
+    <span id="summary" aria-live="polite"></span>
+    <div class="actions">
+      <button id="zip" class="primary" type="button">Scarica tutti (ZIP)</button>
+      <button id="clear" type="button">Svuota elenco</button>
+    </div>
+  </div>
+
+  <ul id="list"></ul>
+
+  <footer>
+    <span class="only-local">I file vengono elaborati solo su questo computer e non vengono inviati in rete.</span>
+    <span class="only-web">I file vengono elaborati direttamente nel tuo browser: non vengono caricati su alcun server.</span><br>
+    Il programma estrae il documento ma <strong>non verifica la validità della firma</strong>.
+  </footer>
+</main>
+
+<script>
+"use strict";
+
+// La pagina funziona in due modalità:
+//  - "local": servita dal programma p7m-extractor, che fa l'estrazione;
+//  - "web":   sito statico, l'estrazione avviene nel browser con WebAssembly.
+const MODE = document.documentElement.dataset.mode === "local" ? "local" : "web";
+const $ = (id) => document.getElementById(id);
+const results = []; // { id, ok }
+const queue = [];
+let active = 0;
+const CONCURRENCY = 3;
+
+function showBanner(msg) {
+  $("banner").textContent = msg;
+  $("banner").classList.add("visible");
+}
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// --- Backend: programma locale ------------------------------------------------
+
+function localBackend() {
+  const token = new URLSearchParams(location.search).get("t") || "";
+  if (!token) showBanner("Indirizzo incompleto: riapri l'interfaccia avviando di nuovo p7m-extractor.");
+
+  const api = (path, opts = {}) => {
+    opts.headers = Object.assign({ "X-Token": token }, opts.headers || {});
+    return fetch(path, opts);
+  };
+
+  return {
+    ready: Promise.resolve(),
+    async extract(file) {
+      let res;
+      try {
+        res = await api("/api/extract?name=" + encodeURIComponent(file.name), {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        });
+      } catch {
+        throw new Error("Connessione con il programma persa: è stato chiuso?");
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "errore " + res.status);
+      return data;
+    },
+    url(id, inline) {
+      return "/api/file/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(token) + (inline ? "&inline=1" : "");
+    },
+    zip(ids) {
+      const form = el("form", { method: "POST", action: "/api/zip?t=" + encodeURIComponent(token) },
+        el("input", { type: "hidden", name: "ids", value: ids.join(",") }));
+      document.body.append(form);
+      form.submit();
+      form.remove();
+    },
+    clear() {
+      return api("/api/clear", { method: "POST" }).catch(() => {});
+    },
+    quit() {
+      return api("/api/quit", { method: "POST" }).catch(() => {});
+    },
+  };
+}
+
+// --- Backend: WebAssembly nel browser -----------------------------------------
+
+function webBackend() {
+  const store = new Map(); // id -> { name, content, mime, urls }
+  let seq = 0;
+
+  const loadScript = (src) => new Promise((resolve, reject) => {
+    const s = el("script", { src });
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("impossibile caricare " + src));
+    document.head.append(s);
+  });
+
+  async function init() {
+    $("status").textContent = "Caricamento del modulo di estrazione…";
+    await loadScript("wasm_exec.js");
+    const go = new Go();
+    let instance;
+    try {
+      instance = (await WebAssembly.instantiateStreaming(fetch("p7m.wasm"), go.importObject)).instance;
+    } catch {
+      // Alcuni server non inviano il Content-Type application/wasm.
+      const res = await fetch("p7m.wasm");
+      if (!res.ok) throw new Error("p7m.wasm non trovato");
+      instance = (await WebAssembly.instantiate(await res.arrayBuffer(), go.importObject)).instance;
+    }
+    go.run(instance);
+    if (typeof globalThis.p7mExtract !== "function") throw new Error("modulo non inizializzato");
+    $("status").textContent = "";
+  }
+
+  const ready = init().catch((e) => {
+    $("status").textContent = "";
+    showBanner("Impossibile avviare il modulo di estrazione (" + e.message + "). Prova ad aggiornare la pagina o a usare un browser recente.");
+    throw e;
+  });
+  ready.catch(() => {}); // l'errore viene già mostrato nel banner
+
+  return {
+    ready,
+    async extract(file) {
+      try {
+        await ready;
+      } catch {
+        throw new Error("Modulo di estrazione non disponibile");
+      }
+      const data = new Uint8Array(await file.arrayBuffer());
+      const r = globalThis.p7mExtract(data, file.name);
+      if (r.error) throw new Error(r.error);
+      const meta = JSON.parse(r.meta);
+      const id = "f" + ++seq;
+      store.set(id, { name: meta.name, content: r.content, mime: meta.mime, urls: {} });
+      return Object.assign({ id }, meta);
+    },
+    url(id, inline) {
+      const f = store.get(id);
+      const key = inline ? "inline" : "download";
+      if (!f.urls[key]) {
+        // Anteprima solo per i tipi sicuri indicati dal modulo (PDF, immagini, testo).
+        const type = inline && f.mime ? f.mime : "application/octet-stream";
+        f.urls[key] = URL.createObjectURL(new Blob([f.content], { type }));
+      }
+      return f.urls[key];
+    },
+    zip(ids) {
+      const files = ids.map((id) => store.get(id)).filter(Boolean);
+      const out = globalThis.p7mZip(files.map((f) => f.name), files.map((f) => f.content));
+      if (!(out instanceof Uint8Array)) {
+        showBanner("Creazione dello ZIP non riuscita: " + (out && out.error));
+        return;
+      }
+      saveBlob(new Blob([out], { type: "application/zip" }), "documenti-estratti.zip");
+    },
+    async clear() {
+      for (const f of store.values()) for (const u of Object.values(f.urls)) URL.revokeObjectURL(u);
+      store.clear();
+    },
+  };
+}
+
+const backend = MODE === "local" ? localBackend() : webBackend();
+
+// --- Formattazione ----------------------------------------------------------
+
+const nf = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 });
+function formatSize(n) {
+  if (n < 1024) return n + " byte";
+  if (n < 1024 * 1024) return nf.format(n / 1024) + " KB";
+  return nf.format(n / 1024 / 1024) + " MB";
+}
+function formatDate(iso, withTime) {
+  const d = new Date(iso);
+  return withTime
+    ? d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })
+    : d.toLocaleDateString("it-IT");
+}
+function extOf(name) {
+  const m = /\.([a-z0-9]{1,5})$/i.exec(name);
+  return m ? m[1].toUpperCase() : "FILE";
+}
+function capitalize(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// --- Elenco -----------------------------------------------------------------
+
+function addPendingRow(fileName) {
+  const meta = el("div", { class: "meta" }, "In elaborazione…");
+  const row = el("div", { class: "row" },
+    el("div", { class: "badge" }, el("div", { class: "spinner" })),
+    el("div", { class: "info" }, el("div", { class: "name" }, fileName), meta));
+  const li = el("li", { class: "item" }, row);
+  $("list").append(li);
+  $("toolbar").classList.add("visible");
+  return li;
+}
+
+function signerLabel(s) {
+  if (!s.hasCert) return "firmatario sconosciuto";
+  return s.name + (s.serialNumber ? " (" + s.serialNumber + ")" : "");
+}
+
+function fillRow(li, data) {
+  const allSigners = data.layers.flat();
+  const first = allSigners[0];
+  // Lo stesso firmatario può comparire in più buste annidate: lo si conta una volta.
+  const others = new Set(allSigners.map(signerLabel)).size - 1;
+  const parts = [formatSize(data.size)];
+  if (first) {
+    let who = "firmato da " + signerLabel(first);
+    if (others === 1) who += " e un altro firmatario";
+    else if (others > 1) who += " e altri " + others + " firmatari";
+    parts.push(who);
+  }
+  if (first && first.signingTime) parts.push(formatDate(first.signingTime, true));
+  if (data.layers.length > 1) parts.push(data.layers.length + " buste annidate");
+
+  const buttons = el("div", { class: "buttons" });
+  if (data.preview) {
+    buttons.append(el("a", { class: "btn", href: backend.url(data.id, true), target: "_blank", rel: "noopener" }, "Apri"));
+  }
+  buttons.append(el("a", { class: "btn", href: backend.url(data.id, false), download: data.name }, "Scarica"));
+
+  const row = el("div", { class: "row" },
+    el("div", { class: "badge" }, extOf(data.name)),
+    el("div", { class: "info" },
+      el("div", { class: "name" }, data.name),
+      el("div", { class: "meta" }, parts.join(" · "))),
+    buttons);
+
+  const details = el("details", {}, el("summary", {}, "Dettagli firma"));
+  data.layers.forEach((signers, i) => {
+    const layer = el("div", { class: "layer" });
+    if (data.layers.length > 1) layer.append(el("h3", {}, "Busta " + (i + 1) + " di " + data.layers.length));
+    if (signers.length === 0) layer.append(el("p", {}, "Nessun firmatario."));
+    for (const s of signers) {
+      const dl = el("dl");
+      const add = (k, v) => { if (v) dl.append(el("dt", {}, k), el("dd", {}, v)); };
+      if (!s.hasCert) add("Firmatario", "certificato non incluso nella busta");
+      add("Firmatario", s.name);
+      add("Identificativo", s.serialNumber);
+      add("Organizzazione", s.organization);
+      add("Emesso da", s.issuer);
+      if (s.notBefore) add("Certificato valido", "dal " + formatDate(s.notBefore) + " al " + formatDate(s.notAfter));
+      if (s.signingTime) add("Data firma", formatDate(s.signingTime, true) + " (dichiarata dal firmatario)");
+      layer.append(dl);
+    }
+    details.append(layer);
+  });
+
+  li.replaceChildren(row, details);
+}
+
+function errorRow(li, fileName, message) {
+  li.classList.add("error");
+  li.replaceChildren(el("div", { class: "row" },
+    el("div", { class: "badge" }, "!"),
+    el("div", { class: "info" },
+      el("div", { class: "name" }, fileName),
+      el("div", { class: "meta" }, capitalize(message)))));
+}
+
+function updateSummary() {
+  const ok = results.filter((r) => r.ok).length;
+  const ko = results.length - ok;
+  const pending = queue.length + active;
+  const parts = [];
+  parts.push(ok === 1 ? "1 documento estratto" : ok + " documenti estratti");
+  if (ko) parts.push(ko === 1 ? "1 errore" : ko + " errori");
+  if (pending) parts.push(pending + " in corso");
+  $("summary").textContent = parts.join(" · ");
+  $("zip").disabled = ok === 0 || pending > 0;
+}
+
+// --- Elaborazione -------------------------------------------------------------
+
+function enqueue(files) {
+  for (const file of files) queue.push({ file, li: addPendingRow(file.name) });
+  updateSummary();
+  pump();
+}
+
+function pump() {
+  while (active < CONCURRENCY && queue.length) {
+    const job = queue.shift();
+    active++;
+    process(job).finally(() => { active--; updateSummary(); pump(); });
+  }
+}
+
+async function process({ file, li }) {
+  try {
+    const data = await backend.extract(file);
+    results.push({ id: data.id, ok: true });
+    fillRow(li, data);
+  } catch (e) {
+    results.push({ ok: false });
+    errorRow(li, file.name, e.message || String(e));
+  }
+}
+
+// --- Trascinamento e selezione -----------------------------------------------
+
+const drop = $("drop");
+$("pick").addEventListener("click", () => $("input").click());
+$("input").addEventListener("change", (e) => {
+  enqueue([...e.target.files]);
+  e.target.value = "";
+});
+
+["dragenter", "dragover"].forEach((t) => document.addEventListener(t, (e) => {
+  e.preventDefault();
+  drop.classList.add("over");
+}));
+document.addEventListener("dragleave", (e) => {
+  if (!e.relatedTarget) drop.classList.remove("over");
+});
+document.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  drop.classList.remove("over");
+  enqueue(await filesFromDrop(e.dataTransfer));
+});
+
+async function filesFromDrop(dt) {
+  // webkitGetAsEntry va chiamato subito, prima di qualsiasi await.
+  const entries = [...dt.items]
+    .filter((i) => i.kind === "file")
+    .map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null));
+  if (!entries.some(Boolean)) return [...dt.files];
+  const out = [];
+  for (const entry of entries) if (entry) await walk(entry, out, true);
+  return out;
+}
+
+async function walk(entry, out, topLevel) {
+  if (entry.isFile) {
+    const file = await new Promise((res, rej) => entry.file(res, rej));
+    // Dentro le cartelle si prendono solo i .p7m; i file trascinati
+    // direttamente vengono sempre provati.
+    if (topLevel || /\.p7m$/i.test(file.name)) out.push(file);
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    let batch;
+    do {
+      batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+      for (const child of batch) await walk(child, out, false);
+    } while (batch.length);
+  }
+}
+
+// --- Azioni ------------------------------------------------------------------
+
+$("zip").addEventListener("click", () => {
+  const ids = results.filter((r) => r.ok).map((r) => r.id);
+  if (ids.length) backend.zip(ids);
+});
+
+$("clear").addEventListener("click", async () => {
+  if (queue.length || active) return;
+  await backend.clear();
+  results.length = 0;
+  $("list").replaceChildren();
+  $("toolbar").classList.remove("visible");
+});
+
+$("quit").addEventListener("click", async () => {
+  if (!backend.quit) return;
+  await backend.quit();
+  $("app").replaceChildren(el("div", { class: "closed" },
+    el("h1", {}, "Programma chiuso"),
+    el("p", {}, "Puoi chiudere questa scheda del browser.")));
+});
+</script>
+</body>
+</html>

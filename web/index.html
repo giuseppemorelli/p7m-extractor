@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- CSP nella pagina: necessaria su hosting che non permettono header
+     personalizzati (es. GitHub Pages). È compatibile con entrambe le modalità:
+     in locale si somma all'header, più restrittivo, inviato dal programma. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; form-action 'self'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
 <title>Estrattore P7M</title>
 <meta name="description" content="Estrai il documento originale dai file firmati digitalmente .p7m (fatture elettroniche, PDF firmati). Tutto avviene nel browser: i file non vengono caricati su alcun server.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232f6fde' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 3v5h5'/%3E%3Cpath d='m9 14 2 2 4-4'/%3E%3C/svg%3E">

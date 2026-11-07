@@ -1,0 +1,52 @@
+# Compila la versione WebAssembly e la pubblica su GitHub Pages.
+#
+# Configurazione una tantum: nel repository su GitHub vai in
+# Settings → Pages → Build and deployment → Source e scegli "GitHub Actions".
+name: Pubblica su GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: # permette di avviarlo a mano dalla scheda Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Una sola pubblicazione alla volta; quelle in corso non vengono interrotte.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: make test
+
+      - name: Compila il sito
+        run: make web
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

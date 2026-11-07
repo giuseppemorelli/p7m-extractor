@@ -9,9 +9,9 @@ dipendenze esterne:
 
 - **programma da riga di comando** per Linux, Windows e macOS;
 - **interfaccia grafica locale**: lo stesso eseguibile, avviato senza argomenti;
-- **sito web statico** (WebAssembly), pubblicabile ad esempio su Cloudflare
-  Pages: l'estrazione avviene nel browser e i file non vengono caricati su
-  alcun server.
+- **sito web statico** (WebAssembly), pubblicabile su GitHub Pages, Cloudflare
+  Pages o qualsiasi hosting statico: l'estrazione avviene nel browser e i file
+  non vengono caricati su alcun server.
 
 ## Formati supportati
 
@@ -52,7 +52,7 @@ Su macOS, al primo avvio di un eseguibile scaricato da internet, Gatekeeper
 può bloccarlo: si sblocca con `xattr -d com.apple.quarantine p7m-extractor-darwin-*`
 oppure da Impostazioni di Sistema → Privacy e sicurezza.
 
-## Versione web (Cloudflare Pages)
+## Versione web
 
 ```sh
 make web        # → dist/web/ (index.html, p7m.wasm, wasm_exec.js, _headers)
@@ -60,17 +60,8 @@ make web        # → dist/web/ (index.html, p7m.wasm, wasm_exec.js, _headers)
 
 `dist/web/` è un sito completamente statico: l'estrattore Go compilato in
 WebAssembly gira nel browser di chi visita il sito, quindi i documenti non
-lasciano mai il suo computer. Il file `_headers` imposta la Content Security
-Policy e gli altri header di sicurezza su Cloudflare Pages.
-
-Per pubblicarlo puoi:
-
-- caricare la cartella `dist/web` dalla dashboard di Cloudflare
-  (Workers & Pages → Crea → Pages → *Direct Upload*);
-- usare Wrangler: `npx wrangler pages deploy dist/web --project-name p7m-extractor`;
-- collegare il repository Git con comando di build `make web` e cartella di
-  output `dist/web` (la versione di Go si sceglie con la variabile d'ambiente
-  `GO_VERSION`).
+lasciano mai il suo computer. Tutti i percorsi sono relativi, quindi il sito
+funziona anche in una sottocartella (come `https://utente.github.io/progetto/`).
 
 `wasm_exec.js` viene copiato dall'installazione di Go usata per compilare,
 perché deve corrispondere esattamente alla sua versione: non va modificato a
@@ -78,7 +69,53 @@ mano né preso da un'altra versione di Go.
 
 Per provarlo in locale serve un server HTTP qualsiasi (aprire `index.html`
 direttamente dal disco non funziona), ad esempio
-`python3 -m http.server -d dist/web 8080`.
+`python3 -m http.server -d dist/web 8080` e poi <http://localhost:8080>.
+
+### Pubblicazione su GitHub Pages
+
+La pubblicazione è automatica: il workflow `.github/workflows/pages.yml`
+esegue i test, compila il sito e lo pubblica a ogni push sul branch `master`.
+
+Configurazione, da fare una volta sola:
+
+1. Carica il repository su GitHub (`git push origin master`).
+2. Su GitHub apri il repository e vai in **Settings → Pages**.
+3. In **Build and deployment → Source** scegli **GitHub Actions**.
+4. Avvia la prima pubblicazione: fai un push, oppure vai nella scheda
+   **Actions**, scegli "Pubblica su GitHub Pages" e premi **Run workflow**.
+5. Al termine (1-2 minuti) il sito è online su
+   `https://<utente>.github.io/<repository>/`, in questo caso
+   <https://giuseppemorelli.github.io/p7m-extractor/>. L'indirizzo compare
+   anche in Settings → Pages e nel riepilogo del workflow.
+
+Da quel momento ogni push su `master` aggiorna il sito. Se i test falliscono,
+il sito non viene aggiornato e resta online la versione precedente.
+
+Note:
+
+- con un account GitHub gratuito, GitHub Pages funziona solo con i
+  repository **pubblici**;
+- per usare un **dominio personalizzato** inseriscilo in Settings → Pages →
+  Custom domain, configura il DNS come indicato da GitHub e attiva
+  "Enforce HTTPS" (con la pubblicazione tramite Actions non serve il file
+  `CNAME`);
+- GitHub Pages non permette header HTTP personalizzati: la Content Security
+  Policy è quindi inserita direttamente nella pagina con un tag `<meta>`. Non
+  è possibile impedire che il sito venga incluso in un iframe di un altro
+  sito, cosa poco rilevante per questo strumento, che non ha account né azioni
+  da proteggere.
+
+### Pubblicazione su Cloudflare Pages
+
+Su Cloudflare il file `_headers` aggiunge gli header di sicurezza che GitHub
+Pages non supporta (protezione dagli iframe, `nosniff`, ...). Per pubblicare:
+
+- carica la cartella `dist/web` dalla dashboard di Cloudflare
+  (Workers & Pages → Crea → Pages → *Direct Upload*);
+- oppure usa Wrangler: `npx wrangler pages deploy dist/web --project-name p7m-extractor`;
+- oppure collega il repository Git con comando di build `make web` e cartella
+  di output `dist/web` (la versione di Go si sceglie con la variabile
+  d'ambiente `GO_VERSION`).
 
 ## Uso da riga di comando
 
@@ -144,6 +181,7 @@ Valori di `GOOS`/`GOARCH` utili: `linux`, `windows`, `darwin` con `amd64` o
 | `cmd/wasm/`       | versione WebAssembly per il sito statico                         |
 | `web/index.html`  | pagina unica, usata sia dall'interfaccia locale sia dal sito web |
 | `web/_headers`    | header di sicurezza per Cloudflare Pages                         |
+| `.github/workflows/pages.yml` | pubblicazione automatica su GitHub Pages             |
 
 ## Test
 
